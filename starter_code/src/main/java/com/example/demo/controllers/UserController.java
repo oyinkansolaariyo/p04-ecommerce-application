@@ -1,10 +1,15 @@
 package com.example.demo.controllers;
 
-import java.util.Optional;
+import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
 
+import com.splunk.TcpInput;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -24,9 +29,17 @@ public class UserController {
 	
 	@Autowired
 	private UserRepository userRepository;
+
+	private static final Logger log = LoggerFactory.getLogger("splunk.logger");
 	
 	@Autowired
 	private CartRepository cartRepository;
+
+	@Autowired
+	private BCryptPasswordEncoder bCryptPasswordEncoder;
+
+	@Autowired
+	private TcpInput tcpInput;
 
 	@GetMapping("/id/{id}")
 	public ResponseEntity<User> findById(@PathVariable Long id) {
@@ -40,14 +53,26 @@ public class UserController {
 	}
 	
 	@PostMapping("/create")
-	public ResponseEntity<User> createUser(@RequestBody CreateUserRequest createUserRequest) {
+	public ResponseEntity<User> createUser(@RequestBody CreateUserRequest createUserRequest) throws URISyntaxException, IOException {
+		log.info("New user create request received");
+		tcpInput.submit("INFO: New user create request received");
+		log.info("Order request success: Order created for user" + createUserRequest.getUsername() + "successfully");
+		tcpInput.submit("Order request success: Order created for user" + createUserRequest.getUsername() + "successfully");
 		User user = new User();
 		user.setUsername(createUserRequest.getUsername());
 		Cart cart = new Cart();
 		cartRepository.save(cart);
 		user.setCart(cart);
-		userRepository.save(user);
-		return ResponseEntity.ok(user);
+		if(createUserRequest.getPassword().length() < 7 || !createUserRequest.getPassword().equals(createUserRequest.getConfirmPassword())){
+			log.error("User create request failure: Bad request during create user request");
+			tcpInput.submit("User create request failure: Bad request during create user request");
+			return ResponseEntity.badRequest().build();
+		}
+		user.setPassword(bCryptPasswordEncoder.encode(createUserRequest.getPassword()));
+		User savedUser = userRepository.save(user);
+		log.info("User create request success: New user created successfully");
+		tcpInput.submit("User create request success :New user created successfully");
+		return ResponseEntity.created(new URI("")).body(savedUser);
 	}
 	
 }
